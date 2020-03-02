@@ -1042,6 +1042,7 @@ func (a *headAppender) Commit() error {
 	defer a.head.metrics.activeAppenders.Dec()
 	defer a.head.putAppendBuffer(a.samples)
 	defer a.head.putSeriesBuffer(a.sampleSeries)
+	defer a.head.iso.closeAppend(a.appendID)
 
 	if err := a.log(); err != nil {
 		return errors.Wrap(err, "write to WAL")
@@ -1068,13 +1069,14 @@ func (a *headAppender) Commit() error {
 
 	a.head.metrics.samplesAppended.Add(float64(total))
 	a.head.updateMinMaxTime(a.mint, a.maxt)
-	a.head.iso.closeAppend(a.appendID)
 
 	return nil
 }
 
 func (a *headAppender) Rollback() error {
-	a.head.metrics.activeAppenders.Dec()
+	defer a.head.metrics.activeAppenders.Dec()
+	defer a.head.iso.closeAppend(a.appendID)
+
 	var series *memSeries
 	for i := range a.samples {
 		series = a.sampleSeries[i]
@@ -1085,7 +1087,6 @@ func (a *headAppender) Rollback() error {
 	}
 	a.head.putAppendBuffer(a.samples)
 	a.samples = nil
-	a.head.iso.closeAppend(a.appendID)
 
 	// Series are created in the head memory regardless of rollback. Thus we have
 	// to log them to the WAL in any case.
